@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>The Office: Agent Sim</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0c0d12; color: #d7d9e0; font-family: ui-monospace, Consolas, monospace; overflow: hidden; }
+  #game { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #conn { position: absolute; top: 8px; left: 10px; font-size: 12px; z-index: 10; }
+  #conn.ok { color: #9be29b; } #conn.bad { color: #ff8b8b; }
+  #hint { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+          background: rgba(20,22,30,.9); border: 1px solid #2c2f3a; border-radius: 6px;
+          padding: 6px 14px; font-size: 13px; z-index: 10; display: none; }
+
+  .panel { position: absolute; background: rgba(20,22,30,.95); border: 1px solid #2c2f3a;
+           border-radius: 8px; z-index: 20; display: none; }
+  .panel h2 { font-size: 11px; margin: 0; padding: 8px 12px; color: #8b90a0;
+              text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #2c2f3a; }
+
+  #activity { top: 16px; right: 16px; width: 280px; max-height: 70vh; }
+  #activity .body { padding: 8px 12px; font-size: 12px; line-height: 1.7; overflow-y: auto; max-height: 60vh; }
+  #activity .body div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  #chat { left: 50%; bottom: 56px; transform: translateX(-50%); width: 480px; }
+  #chatLog { padding: 8px 12px; font-size: 12px; line-height: 1.6; height: 220px; overflow-y: auto; }
+  #chatLog .player { color: #7dc4ff; }
+  #chatLog .agent { color: #ffd479; }
+  #chatLog .system { color: #8b90a0; font-style: italic; }
+  #chatLog .perm { color: #ff8b8b; }
+  #chatLog button { background: #2d6cdf; color: #fff; border: 0; border-radius: 4px;
+                    padding: 2px 10px; margin-left: 6px; cursor: pointer; font-size: 11px; }
+  #chatLog button.warn { background: #c25450; }
+  #chatRow { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid #2c2f3a; }
+  #chatInput { flex: 1; background: #0f1014; color: #d7d9e0; border: 1px solid #2c2f3a;
+               border-radius: 4px; padding: 6px 8px; font: inherit; }
+  #chatSend { background: #2d6cdf; color: #fff; border: 0; border-radius: 4px; padding: 6px 14px; cursor: pointer; }
+  #chatMode { padding: 0 12px 8px; font-size: 11px; color: #8b90a0; }
+</style>
+</head>
+<body>
+  <div id="game"></div>
+  <span id="conn" class="bad">● connecting…</span>
+  <div id="hint"></div>
+
+  <div id="activity" class="panel">
+    <h2 id="activityTitle">jim — activity</h2>
+    <div class="body" id="activityBody"></div>
+  </div>
+
+  <div id="chat" class="panel">
+    <h2 id="chatTitle">jim</h2>
+    <div id="chatLog"></div>
+    <div id="chatMode"></div>
+    <div id="chatRow">
+      <input id="chatInput" type="text" autocomplete="off" />
+      <button id="chatSend">Send</button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

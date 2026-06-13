@@ -13,7 +13,7 @@
   "scripts": {
     "demo": "npm run demo --workspace server",
     "demo:real": "npm run demo:real --workspace server",
-    "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p server",
+    "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p server && tsc --noEmit -p client",
     "demo:git": "npm run demo:git --workspace server",
     "start": "npm run start --workspace server",
     "start:real": "npm run start:real --workspace server"
