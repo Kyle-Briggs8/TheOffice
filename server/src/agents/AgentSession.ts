@@ -6,7 +6,8 @@ import type { AgentStatus } from "@office/shared";
  * jump (e.g. idle → ready_for_review) fails loudly instead of corrupting UI state.
  */
 const TRANSITIONS: Record<AgentStatus, readonly AgentStatus[]> = {
-  idle: ["working"],
+  idle: ["working", "on_break"],
+  on_break: ["working", "idle"], // queued → starts when a slot frees, or cancelled
   working: ["blocked", "ready_for_review", "idle"],
   blocked: ["working", "idle"],
   ready_for_review: ["revising", "idle"],

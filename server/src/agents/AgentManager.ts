@@ -94,9 +94,10 @@ export class AgentManager extends EventEmitter {
     const task: AssignedTask = { taskId, prompt };
     session.task = task;
 
-    if (this.workingCount() >= this.config.maxWorking) {
+    if (this.occupiedCount() >= this.config.maxWorking) {
       // Concurrency cap: queue as 💤 "on break" — Pro limits are shared.
       this.taskQueue.push({ agent: agentName, task });
+      this.setStatus(session, "on_break");
       this.emitEvent({ type: "task.update", taskId, status: "queued" });
     } else {
       this.startTask(agentName, task);
@@ -188,8 +189,11 @@ export class AgentManager extends EventEmitter {
   // -------------------------------------------------------------------------
 
   private startTask(agentName: string, task: AssignedTask): void {
+    const { session, runner } = this.get(agentName);
+    // Occupy the working slot synchronously so drainQueue can't over-start
+    // while the (possibly async) git setup below is still in flight.
+    this.setStatus(session, "working");
     void (async () => {
-      const { session, runner } = this.get(agentName);
       if (this.git) {
         await this.git.ensureProjectRepo();
         const slug = `${task.taskId}-${slugify(task.prompt)}`;
@@ -239,16 +243,25 @@ export class AgentManager extends EventEmitter {
   }
 
   private drainQueue(): void {
-    while (this.taskQueue.length > 0 && this.workingCount() < this.config.maxWorking) {
+    // startTask occupies a slot synchronously, so re-checking occupiedCount each
+    // iteration is safe in both mock and real (async git) mode.
+    while (this.taskQueue.length > 0 && this.occupiedCount() < this.config.maxWorking) {
       const next = this.taskQueue.shift();
       if (next) this.startTask(next.agent, next.task);
     }
   }
 
-  private workingCount(): number {
+  /** Agents actively holding a working slot. on_break/ready_for_review/idle don't. */
+  private occupiedCount(): number {
     let count = 0;
     for (const { session } of this.agents.values()) {
-      if (session.status === "working" || session.status === "revising") count++;
+      if (
+        session.status === "working" ||
+        session.status === "blocked" ||
+        session.status === "revising"
+      ) {
+        count++;
+      }
     }
     return count;
   }
@@ -257,7 +270,9 @@ export class AgentManager extends EventEmitter {
     if (status === session.status) return;
     session.transition(status); // throws on illegal jumps
     this.emitEvent({ type: "agent.status", agent: session.name, status });
-    if (status !== "working" && status !== "revising") this.drainQueue();
+    // A freed slot (→ ready_for_review / idle) may let a queued agent start.
+    // drainQueue is guarded, so calling it after any change is safe.
+    this.drainQueue();
   }
 
   private makeContext(session: AgentSession): RunnerContext {
@@ -297,6 +312,7 @@ function taskStatusFor(status: AgentStatus): "queued" | "in_progress" | "ready_f
     case "working":
     case "blocked":
       return "in_progress";
+    case "on_break":
     case "idle":
       return "queued"; // has a task but isn't working it yet → waiting on the cap
   }

@@ -9,6 +9,7 @@ export const AGENT_STATUSES = [
   "blocked",
   "ready_for_review",
   "revising",
+  "on_break", // assigned a task but waiting for a working slot (concurrency cap)
 ] as const;
 
 export type AgentStatus = (typeof AGENT_STATUSES)[number];

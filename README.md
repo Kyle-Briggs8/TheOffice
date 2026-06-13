@@ -4,11 +4,12 @@ A pixel-art office sim that is a real multi-agent coding orchestrator. Each NPC
 "employee" is a live Claude Code session (Claude Agent SDK). See `CLAUDE_1.md`
 for the full design and build order.
 
-**Build status: step 4 of 6** — server with one agent ("jim"), the AgentManager,
-the status state machine, the mock event pipeline, GitService (branch + worktree
-lifecycle, merge with conflict auto-send-back), the WebSocket gateway with an
-HTML debug page, and the Phaser client (tilemap office, player movement,
-proximity tiers, chat panel over the same WS).
+**Build status: step 5 of 6** — three agents (jim, dwight, pam) with personality
+prompts and a concurrency cap, the AgentManager, the status state machine, the
+mock event pipeline, GitService (branch + worktree lifecycle, merge with
+conflict auto-send-back), the WebSocket gateway with an HTML debug page, and the
+Phaser client (tilemap office, three desks, player movement, proximity tiers,
+chat panel over the same WS).
 
 ## Layout
 
@@ -51,6 +52,8 @@ state replayed as ordinary `agent.status` / `task.update` envelopes.
 
 `npm run smoke:ws -w server` (with the server running) drives the full
 assign → review → send-back → merge loop headlessly over the wire.
+`npm run demo:cap -w server` proves the concurrency cap: three agents, two work
+and the third queues as 💤 until a slot frees (mock, zero SDK calls).
 
 ## Run the game client
 
@@ -61,11 +64,17 @@ npm run dev -w client     # terminal 2: Vite dev server
 
 Open http://localhost:5173/. Move with WASD/arrows. Proximity = context depth:
 
-1. **Far** — jim shows an ambient status bubble (☕ ⌨️ ❗ 📋 🔁)
-2. **Near his desk** — read-only activity feed panel appears
-3. **Press E at the desk** — chat panel: if jim is idle your message assigns a
-   task; otherwise it goes into his live session. Permission prompts (real
-   mode) appear here with Approve/Deny. Esc or walking away closes it.
+1. **Far** — each agent shows an ambient status bubble (☕ idle, ⌨️ working,
+   ❗ blocked, 📋 ready for review, 🔁 revising, 💤 on break / queued)
+2. **Near a desk** — read-only activity feed panel for that agent appears
+3. **Press E at a desk** — chat panel: if the agent is idle your message assigns
+   a task; otherwise it goes into their live session.
+
+Three agents work the office (jim, dwight, pam). A **concurrency cap** (max 2
+working at once, `MAX_WORKING`) keeps Pro limits in check — assign all three and
+the third queues as 💤 until a slot frees. Permission requests appear in an
+**always-visible tray** at the top of the screen (Approve/Deny) no matter where
+you're standing.
 
 Merge / send-back / kill still live on the debug page (http://localhost:3001/)
 until the manager-office review panel lands in step 6. The client connects to
@@ -143,5 +152,4 @@ npm run typecheck
 
 ## Next (do not skip ahead)
 
-5. Three agents + personality prompts + concurrency cap UX
-6. Manager-office review panel
+6. Manager-office review panel (list ready branches, diff summary, merge/send-back/kill in-game)

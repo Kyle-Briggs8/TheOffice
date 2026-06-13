@@ -6,6 +6,7 @@ const ICONS: Record<string, string> = {
   blocked: "❗",
   ready_for_review: "📋",
   revising: "🔁",
+  on_break: "💤",
 };
 
 /** Console renderer for the event stream — used by the demo and the server. */

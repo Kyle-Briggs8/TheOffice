@@ -15,7 +15,9 @@ async function main(): Promise<void> {
   const manager = new AgentManager(config);
   manager.on("event", logEvent);
 
-  await manager.addAgent("jim");
+  for (const name of ["jim", "dwight", "pam"]) {
+    await manager.addAgent(name);
+  }
 
   const debugPage = path.join(
     path.dirname(fileURLToPath(import.meta.url)),

@@ -10,11 +10,19 @@ const BUBBLES: Record<AgentStatus, string> = {
   blocked: "❗",
   ready_for_review: "📋",
   revising: "🔁",
+  on_break: "💤",
 };
 
-/** Proximity tiers (world px from the desk): far → near (panel) → chat (E). */
+/** Proximity tiers (world px from a desk): far → near (panel) → chat (E). */
 const NEAR_RADIUS = 84;
 const CHAT_RADIUS = 52;
+
+/** Desk layout: one per agent, with the seated-worker sprite to use. */
+const DESKS: ReadonlyArray<{ name: string; x: number; y: number; worker: string }> = [
+  { name: "jim", x: 384, y: 96, worker: "worker" },
+  { name: "dwight", x: 96, y: 112, worker: "worker2" },
+  { name: "pam", x: 96, y: 240, worker: "worker4" },
+];
 
 interface Deps {
   state: OfficeState;
@@ -22,13 +30,20 @@ interface Deps {
   panels: Panels;
 }
 
+interface DeskView {
+  name: string;
+  x: number;
+  y: number;
+  bubble: Phaser.GameObjects.Text;
+}
+
 export class OfficeScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private keys!: Record<"W" | "A" | "S" | "D" | "E", Phaser.Input.Keyboard.Key>;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-  private bubble!: Phaser.GameObjects.Text;
-  private readonly jimDesk = { x: 380, y: 92 };
-  private nearDesk = false;
+  private desks: DeskView[] = [];
+  /** Agent whose desk the player is currently within chat range of (or null). */
+  private chatTarget: string | null = null;
 
   constructor(private readonly deps: Deps) {
     super("office");
@@ -41,7 +56,10 @@ export class OfficeScene extends Phaser.Scene {
     this.load.spritesheet("julia-left", "sprites/julia-left.png", sheet);
     this.load.spritesheet("julia-right", "sprites/julia-right.png", sheet);
     this.load.spritesheet("julia-up", "sprites/julia-up.png", sheet);
-    for (const key of ["worker", "desk-pc", "plant", "water-cooler", "coffee-maker", "printer", "cabinet", "trash"]) {
+    for (const key of [
+      "worker", "worker2", "worker4", "desk-pc", "plant",
+      "water-cooler", "coffee-maker", "printer", "cabinet", "trash",
+    ]) {
       this.load.image(key, `sprites/${key}.png`);
     }
   }
@@ -57,26 +75,33 @@ export class OfficeScene extends Phaser.Scene {
     if (!walls) throw new Error("walls layer missing");
     walls.setCollision(2);
 
-    // Decor (positions are placeholder-tier; collision only where it matters).
+    // Decor (placeholder-tier positions).
     this.add.image(52, 40, "water-cooler");
-    this.add.image(120, 28, "cabinet");
     this.add.image(200, 26, "coffee-maker").setOrigin(0.5, 0.3);
     this.add.image(444, 200, "printer");
-    this.add.image(40, 286, "plant");
-    this.add.image(440, 286, "plant");
+    this.add.image(250, 300, "plant");
     this.add.image(330, 250, "trash");
 
-    // jim's corner office: desk + seated worker sprite.
-    const desk = this.physics.add.staticImage(this.jimDesk.x, this.jimDesk.y, "desk-pc");
-    desk.setSize(44, 24).setOffset(10, 28);
-    this.add.image(this.jimDesk.x, this.jimDesk.y - 14, "worker");
-    this.bubble = this.add
-      .text(this.jimDesk.x, this.jimDesk.y - 46, BUBBLES.idle, { fontSize: "16px" })
-      .setOrigin(0.5)
-      .setDepth(10_000);
+    // One desk + seated worker + status bubble per agent.
+    const deskColliders = this.physics.add.staticGroup();
+    for (const spec of DESKS) {
+      const desk = this.physics.add.staticImage(spec.x, spec.y, "desk-pc");
+      desk.setSize(44, 24).setOffset(10, 28);
+      deskColliders.add(desk);
+      this.add.image(spec.x, spec.y - 14, spec.worker);
+      this.add
+        .text(spec.x, spec.y - 30, spec.name, { fontSize: "9px", color: "#cdd0db" })
+        .setOrigin(0.5)
+        .setDepth(10_000);
+      const bubble = this.add
+        .text(spec.x, spec.y - 46, BUBBLES.idle, { fontSize: "16px" })
+        .setOrigin(0.5)
+        .setDepth(10_000);
+      this.desks.push({ name: spec.name, x: spec.x, y: spec.y, bubble });
+    }
 
     // Player (Julia walk sheets: 4 frames per direction, 64x64).
-    this.player = this.physics.add.sprite(140, 220, "julia-down", 0);
+    this.player = this.physics.add.sprite(220, 180, "julia-down", 0);
     this.player.body?.setSize(12, 8);
     this.player.body?.setOffset(26, 46);
     this.player.setCollideWorldBounds(true);
@@ -91,7 +116,7 @@ export class OfficeScene extends Phaser.Scene {
     }
 
     this.physics.add.collider(this.player, walls);
-    this.physics.add.collider(this.player, desk);
+    this.physics.add.collider(this.player, deskColliders);
     this.physics.world.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
 
     this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
@@ -104,13 +129,15 @@ export class OfficeScene extends Phaser.Scene {
     this.keys = keyboard.addKeys("W,A,S,D,E") as OfficeScene["keys"];
     keyboard.on("keydown-ESC", () => this.deps.panels.closeChat());
 
-    // Status bubble renders straight off the shared event-driven store.
-    const updateBubble = () => {
-      const jim = this.deps.state.agents.get("jim");
-      if (jim) this.bubble.setText(BUBBLES[jim.status]);
+    // Status bubbles render straight off the shared event-driven store.
+    const updateBubbles = () => {
+      for (const desk of this.desks) {
+        const agent = this.deps.state.agents.get(desk.name);
+        if (agent) desk.bubble.setText(BUBBLES[agent.status]);
+      }
     };
-    this.deps.state.onChange(updateBubble);
-    updateBubble();
+    this.deps.state.onChange(updateBubbles);
+    updateBubbles();
   }
 
   override update(): void {
@@ -138,39 +165,49 @@ export class OfficeScene extends Phaser.Scene {
 
     this.player.setDepth(this.player.y);
 
-    // -- proximity tiers --------------------------------------------------------
-    const dist = Phaser.Math.Distance.Between(
-      this.player.x, this.player.y, this.jimDesk.x, this.jimDesk.y,
-    );
-
-    const near = dist <= NEAR_RADIUS;
-    if (near !== this.nearDesk) {
-      this.nearDesk = near;
-      if (near) panels.showActivity("jim");
-      else panels.hideActivity();
+    // -- proximity tiers (against the nearest desk) ---------------------------
+    let nearest: DeskView | null = null;
+    let nearestDist = Infinity;
+    for (const desk of this.desks) {
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, desk.x, desk.y);
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearest = desk;
+      }
     }
 
-    const inChatRange = dist <= CHAT_RADIUS;
-    if (!inChatRange && panels.isChatOpen()) panels.closeChat();
-    if (inChatRange && !panels.isChatOpen()) {
-      panels.setHint("Press E to talk to jim");
-      if (Phaser.Input.Keyboard.JustDown(this.keys.E)) panels.openChat("jim");
+    // Tier 2: activity feed for whichever desk we're near.
+    if (nearest && nearestDist <= NEAR_RADIUS) {
+      panels.showActivity(nearest.name);
     } else {
-      panels.setHint(panels.isChatOpen() ? "Esc or walk away to close" : "");
+      panels.hideActivity();
+    }
+
+    // Tier 3: chat on E within chat range; close on leaving range.
+    const inChatRange = nearest !== null && nearestDist <= CHAT_RADIUS;
+    if (inChatRange && nearest) {
+      this.chatTarget = nearest.name;
+      if (!panels.isChatOpen()) {
+        panels.setHint(`Press E to talk to ${nearest.name}`);
+        if (Phaser.Input.Keyboard.JustDown(this.keys.E)) panels.openChat(nearest.name);
+      } else {
+        panels.setHint("Esc or walk away to close");
+      }
+    } else {
+      if (panels.isChatOpen()) panels.closeChat();
+      this.chatTarget = null;
+      panels.setHint("");
     }
   }
 
   /** 3-tile strip (floor, wall, carpet) generated at runtime — no binary tileset. */
   private makeTilesetTexture(): void {
     const g = this.add.graphics();
-    // tile 1: floor
     g.fillStyle(0x23252e).fillRect(0, 0, 16, 16);
     g.fillStyle(0x282a34).fillRect(0, 0, 16, 1).fillRect(0, 0, 1, 16);
-    // tile 2: wall
     g.fillStyle(0x434965).fillRect(16, 0, 16, 16);
     g.fillStyle(0x333952).fillRect(16, 12, 16, 4);
     g.fillStyle(0x4d547a).fillRect(16, 0, 16, 2);
-    // tile 3: carpet
     g.fillStyle(0x2a3550).fillRect(32, 0, 16, 16);
     g.fillStyle(0x32405f);
     for (let y = 2; y < 16; y += 4) for (let x = 2 + (y % 8) / 2; x < 16; x += 4) g.fillRect(32 + x, y, 1, 1);

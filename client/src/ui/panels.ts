@@ -134,8 +134,10 @@ export class Panels {
       this.el.chatTitle.textContent = `${this.chatAgent} — ${agent?.status ?? "?"}`;
       this.el.chatMode.textContent =
         agent?.status === "idle"
-          ? "jim is idle — your message becomes a task assignment"
-          : "jim is busy — your message goes into his live session";
+          ? `${this.chatAgent} is idle — your message becomes a task assignment`
+          : agent?.status === "on_break"
+            ? `${this.chatAgent} is on break — queued, waiting for a free working slot`
+            : `${this.chatAgent} is busy — your message goes into their live session`;
 
       this.el.chatLog.innerHTML = "";
       for (const entry of agent?.chat ?? []) {
