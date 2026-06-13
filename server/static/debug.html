@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>The Office — debug stream</title>
+<style>
+  body { font-family: ui-monospace, Consolas, monospace; background: #14151a; color: #d7d9e0; margin: 0; padding: 16px; }
+  h1 { font-size: 16px; margin: 0 0 12px; }
+  .row { display: flex; gap: 16px; align-items: flex-start; }
+  .col { flex: 1; min-width: 0; }
+  .panel { background: #1d1f27; border: 1px solid #2c2f3a; border-radius: 6px; padding: 10px; margin-bottom: 12px; }
+  .panel h2 { font-size: 12px; margin: 0 0 8px; color: #8b90a0; text-transform: uppercase; letter-spacing: 1px; }
+  #agents span.chip { display: inline-block; background: #262a36; border-radius: 4px; padding: 4px 10px; margin-right: 8px; }
+  #log { height: 420px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; font-size: 12px; line-height: 1.5; }
+  #log .t-status { color: #7dc4ff; } #log .t-activity { color: #9be29b; }
+  #log .t-message { color: #ffd479; } #log .t-permission { color: #ff8b8b; }
+  #log .t-review { color: #d4a5ff; } #log .t-task { color: #8b90a0; }
+  input[type=text] { background: #0f1014; color: #d7d9e0; border: 1px solid #2c2f3a; border-radius: 4px; padding: 6px 8px; width: 60%; }
+  button { background: #2d6cdf; color: #fff; border: 0; border-radius: 4px; padding: 6px 12px; margin-left: 6px; cursor: pointer; }
+  button.warn { background: #c25450; } button.alt { background: #3a3f4f; }
+  .item { border-top: 1px solid #2c2f3a; padding: 6px 0; }
+  #conn { float: right; font-size: 12px; }
+  .ok { color: #9be29b; } .bad { color: #ff8b8b; }
+</style>
+</head>
+<body>
+<h1>The Office — raw event stream <span id="conn" class="bad">disconnected</span></h1>
+
+<div class="panel"><h2>Agents</h2><div id="agents">(none yet)</div></div>
+
+<div class="row">
+  <div class="col">
+    <div class="panel">
+      <h2>Assign task</h2>
+      <input type="text" id="taskPrompt" value="Add a hello() function in src/hello.ts that returns 'world'." />
+      <button id="assignBtn">Assign to jim</button>
+    </div>
+    <div class="panel">
+      <h2>Chat with jim</h2>
+      <input type="text" id="chatText" placeholder="say something…" />
+      <button id="chatBtn">Send</button>
+    </div>
+    <div class="panel"><h2>Permission requests</h2><div id="perms">(none)</div></div>
+    <div class="panel"><h2>Ready for review</h2><div id="reviews">(none)</div></div>
+  </div>
+  <div class="col">
+    <div class="panel"><h2>Event log</h2><div id="log"></div></div>
+  </div>
+</div>
+
+<script>
+  const ICONS = { idle: "☕", working: "⌨️", blocked: "❗", ready_for_review: "📋", revising: "🔁" };
+  const $ = (id) => document.getElementById(id);
+  const agents = new Map();   // name -> status
+  const perms = new Map();    // requestId -> event
+  const reviews = new Map();  // taskId -> event
+
+  const ws = new WebSocket(`ws://${location.host}`);
+  ws.onopen = () => { $("conn").textContent = "connected"; $("conn").className = "ok"; };
+  ws.onclose = () => { $("conn").textContent = "disconnected"; $("conn").className = "bad"; };
+  ws.onmessage = (msg) => handle(JSON.parse(msg.data));
+
+  function send(command) { ws.send(JSON.stringify(command)); }
+
+  function handle(ev) {
+    appendLog(ev);
+    if (ev.type === "agent.status") {
+      agents.set(ev.agent, ev.status);
+      renderAgents();
+    } else if (ev.type === "agent.permission_request") {
+      perms.set(ev.requestId, ev);
+      renderPerms();
+    } else if (ev.type === "review.ready") {
+      reviews.set(ev.taskId, ev);
+      renderReviews();
+    } else if (ev.type === "task.update") {
+      if (["merged", "killed", "revising", "in_progress"].includes(ev.status)) {
+        reviews.delete(ev.taskId);
+        renderReviews();
+      }
+    }
+  }
+
+  function appendLog(ev) {
+    const div = document.createElement("div");
+    div.className = { "agent.status": "t-status", "agent.activity": "t-activity", "agent.message": "t-message",
+                      "agent.permission_request": "t-permission", "review.ready": "t-review", "task.update": "t-task" }[ev.type] || "";
+    div.textContent = `${new Date().toISOString().slice(11, 19)} ${JSON.stringify(ev)}`;
+    const log = $("log");
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function renderAgents() {
+    $("agents").innerHTML = "";
+    for (const [name, status] of agents) {
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      chip.textContent = `${name} ${ICONS[status] ?? ""} ${status}`;
+      $("agents").appendChild(chip);
+    }
+  }
+
+  function renderPerms() {
+    const box = $("perms");
+    box.innerHTML = perms.size === 0 ? "(none)" : "";
+    for (const [id, ev] of perms) {
+      const row = document.createElement("div");
+      row.className = "item";
+      row.textContent = `${ev.agent} → ${ev.tool}: ${ev.detail} `;
+      const yes = document.createElement("button");
+      yes.textContent = "Approve";
+      yes.onclick = () => { send({ type: "permission.respond", requestId: id, approve: true }); perms.delete(id); renderPerms(); };
+      const no = document.createElement("button");
+      no.className = "warn";
+      no.textContent = "Deny";
+      no.onclick = () => { send({ type: "permission.respond", requestId: id, approve: false }); perms.delete(id); renderPerms(); };
+      row.append(yes, no);
+      box.appendChild(row);
+    }
+  }
+
+  function renderReviews() {
+    const box = $("reviews");
+    box.innerHTML = reviews.size === 0 ? "(none)" : "";
+    for (const [taskId, ev] of reviews) {
+      const row = document.createElement("div");
+      row.className = "item";
+      row.textContent = `${taskId} (${ev.agent}): ${ev.summary} [${ev.diffStat}] `;
+      const merge = document.createElement("button");
+      merge.textContent = "Merge";
+      merge.onclick = () => send({ type: "review.merge", taskId });
+      const back = document.createElement("button");
+      back.className = "alt";
+      back.textContent = "Send back";
+      back.onclick = () => {
+        const feedback = prompt("Feedback for the agent:");
+        if (feedback !== null) send({ type: "review.send_back", taskId, feedback });
+      };
+      const kill = document.createElement("button");
+      kill.className = "warn";
+      kill.textContent = "Kill";
+      kill.onclick = () => send({ type: "review.kill", taskId });
+      row.append(merge, back, kill);
+      box.appendChild(row);
+    }
+  }
+
+  $("assignBtn").onclick = () => {
+    const promptText = $("taskPrompt").value.trim();
+    if (promptText) send({ type: "task.assign", agent: "jim", prompt: promptText });
+  };
+  $("chatBtn").onclick = () => {
+    const text = $("chatText").value.trim();
+    if (text) { send({ type: "chat.send", agent: "jim", text }); $("chatText").value = ""; }
+  };
+  $("chatText").addEventListener("keydown", (e) => { if (e.key === "Enter") $("chatBtn").click(); });
+  $("taskPrompt").addEventListener("keydown", (e) => { if (e.key === "Enter") $("assignBtn").click(); });
+</script>
+</body>
+</html>

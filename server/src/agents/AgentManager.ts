@@ -162,6 +162,25 @@ export class AgentManager extends EventEmitter {
     this.clearTask(session);
   }
 
+  /**
+   * Current state replayed as ordinary protocol events — sent to every newly
+   * connected WS client so it can render without waiting for the next change.
+   */
+  snapshotEvents(): ServerEvent[] {
+    const events: ServerEvent[] = [];
+    for (const { session } of this.agents.values()) {
+      events.push({ type: "agent.status", agent: session.name, status: session.status });
+      if (session.task) {
+        events.push({
+          type: "task.update",
+          taskId: session.task.taskId,
+          status: taskStatusFor(session.status),
+        });
+      }
+    }
+    return events;
+  }
+
   dispose(): void {
     for (const { runner } of this.agents.values()) runner.dispose();
   }
@@ -266,6 +285,20 @@ export class AgentManager extends EventEmitter {
       if (managed.session.task?.taskId === taskId) return managed;
     }
     throw new Error(`no agent owns task "${taskId}"`);
+  }
+}
+
+function taskStatusFor(status: AgentStatus): "queued" | "in_progress" | "ready_for_review" | "revising" {
+  switch (status) {
+    case "ready_for_review":
+      return "ready_for_review";
+    case "revising":
+      return "revising";
+    case "working":
+    case "blocked":
+      return "in_progress";
+    case "idle":
+      return "queued"; // has a task but isn't working it yet → waiting on the cap
   }
 }
 

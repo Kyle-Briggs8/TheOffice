@@ -4,10 +4,10 @@ A pixel-art office sim that is a real multi-agent coding orchestrator. Each NPC
 "employee" is a live Claude Code session (Claude Agent SDK). See `CLAUDE_1.md`
 for the full design and build order.
 
-**Build status: step 2 of 6** — server skeleton with one agent ("jim"), the
-AgentManager, the status state machine, the mock event pipeline, and GitService
-(branch + worktree lifecycle, merge with conflict auto-send-back). No WebSocket,
-no game client yet.
+**Build status: step 3 of 6** — server skeleton with one agent ("jim"), the
+AgentManager, the status state machine, the mock event pipeline, GitService
+(branch + worktree lifecycle, merge with conflict auto-send-back), and the
+WebSocket gateway with an HTML debug page. No game client yet.
 
 ## Layout
 
@@ -16,7 +16,9 @@ shared/   protocol types (ServerEvent / ClientCommand) — one source of truth
 server/   Node 18+ / TypeScript backend
   src/agents/        AgentManager, AgentSession (state machine), runners
   src/git/           GitService (branch + worktree lifecycle, raw git via execa)
+  src/ws/            Gateway — the single WebSocket + HTTP debug page
   src/personalities/ per-agent system prompts (jim.md)
+  static/debug.html  plain HTML page rendering the raw event stream
 client/   Phaser game — empty until step 4
 office-hq/ runtime data dir (gitignored): project repo + worktrees/<agent>/
 ```
@@ -28,6 +30,22 @@ TypeScript strict mode, ESM, npm workspaces. Run with `tsx` (no build step).
 ```sh
 npm install
 ```
+
+## Run the server (WS gateway + debug page)
+
+```sh
+npm run start        # mock mode (default)
+npm run start:real   # real Claude Agent SDK sessions
+```
+
+Exposes the single WebSocket at `ws://localhost:3001` (override with `WS_PORT`)
+and serves a debug page at `http://localhost:3001/` that renders the raw event
+stream and can drive every client command: assign task, chat, approve/deny
+permissions, merge / send back / kill. New connections receive the current
+state replayed as ordinary `agent.status` / `task.update` envelopes.
+
+`npm run smoke:ws -w server` (with the server running) drives the full
+assign → review → send-back → merge loop headlessly over the wire.
 
 ## Run the mock demo (default — zero SDK calls)
 
@@ -101,7 +119,6 @@ npm run typecheck
 
 ## Next (do not skip ahead)
 
-3. WS gateway + plain HTML debug page
-4. Phaser client
+4. Phaser client (tilemap office, player movement, proximity tiers, chat panel)
 5. Three agents + concurrency cap UX
 6. Manager-office review panel

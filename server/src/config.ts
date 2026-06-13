@@ -12,6 +12,8 @@ export interface ServerConfig {
   projectDir: string;
   /** How long a permission request can sit unanswered before auto-deny. */
   permissionTimeoutMs: number;
+  /** Port for the single WebSocket gateway (+ the HTTP debug page). */
+  wsPort: number;
   /** Base delay between scripted mock events. */
   mockDelayMs: number;
 }
@@ -30,6 +32,7 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): ServerConfig
     officeHqDir,
     projectDir: path.join(officeHqDir, "project"),
     permissionTimeoutMs: Number(process.env.PERMISSION_TIMEOUT_MS ?? 120_000),
+    wsPort: Number(process.env.WS_PORT ?? 3001),
     mockDelayMs: Number(process.env.MOCK_DELAY_MS ?? 600),
   };
 }
