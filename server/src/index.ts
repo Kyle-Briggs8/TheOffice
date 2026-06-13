@@ -1,7 +1,9 @@
 /**
- * Step 1 demo entry: one agent ("jim"), one task, structured events logged to
- * the console. Mock mode (default) proves the full event flow with zero SDK
- * calls; --real / MOCK_AGENTS=0 runs an actual Claude Agent SDK session.
+ * Demo entry: one agent ("jim"), one task, structured events logged to the
+ * console. Mock mode (default) proves the full event flow with zero SDK calls;
+ * --real / MOCK_AGENTS=0 runs an actual Claude Agent SDK session in a git
+ * worktree. After the first review.ready the demo sends the task back once
+ * (revising loop), then merges — exercising the step 2 review commands.
  */
 import type { ServerEvent } from "@office/shared";
 import { loadConfig } from "./config.js";
@@ -54,19 +56,36 @@ async function main(): Promise<void> {
   const manager = new AgentManager(config);
   manager.on("event", logEvent);
 
+  await manager.addAgent("jim");
+  const taskId = manager.assignTask("jim", prompt);
+
+  // Drive the review loop off the event stream: first review.ready → send
+  // back once; second review.ready → merge; merged → done.
+  let reviewCount = 0;
   const done = new Promise<void>((resolve) => {
     manager.on("event", (event: ServerEvent) => {
-      if (event.type === "agent.status" && event.status === "ready_for_review") {
+      if (event.type === "review.ready" && event.taskId === taskId) {
+        reviewCount++;
+        if (reviewCount === 1) {
+          console.log("\n>> sending back for revision…\n");
+          manager.handleCommand({
+            type: "review.send_back",
+            taskId,
+            feedback: "Looks good, but rename hello() to greet() and add a doc comment.",
+          });
+        } else {
+          console.log("\n>> merging…\n");
+          manager.handleCommand({ type: "review.merge", taskId });
+        }
+      }
+      if (event.type === "task.update" && event.taskId === taskId && event.status === "merged") {
         resolve();
       }
     });
   });
 
-  await manager.addAgent("jim");
-  manager.handleCommand({ type: "task.assign", agent: "jim", prompt });
-
   await done;
-  console.log("\njim is ready for review — demo complete. (Review flow lands in steps 2/6.)");
+  console.log("\ntask merged, jim is back to idle — demo complete.");
   manager.dispose();
   process.exit(0);
 }

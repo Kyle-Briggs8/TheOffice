@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile, access } from "node:fs/promises";
 import path from "node:path";
 import {
   query,
@@ -14,7 +13,7 @@ import type { AssignedTask } from "./AgentSession.js";
 import { PushStream } from "./PushStream.js";
 
 export interface SdkRunnerOptions {
-  /** The agent's working directory. Until GitService (step 2) this is the toy repo itself. */
+  /** Fallback cwd; in practice each task carries its own git worktree path. */
   cwd: string;
   /** Personality system prompt, appended to the claude_code preset. */
   personality: string;
@@ -34,25 +33,29 @@ interface PendingPermission {
  * Real Claude Agent SDK session (MOCK_AGENTS=0). Authenticates via the local
  * Claude Code login — no API keys are read or stored anywhere in this codebase.
  *
- * One streaming-input session per assigned task: the task prompt starts the
- * session, chat.send pushes follow-up user messages into it, and each SDK
- * result message maps to ready_for_review.
+ * One streaming-input session per assigned task, with cwd locked to the task's
+ * git worktree: the task prompt starts the session, chat.send (and send-back
+ * feedback) pushes follow-up user messages into it, and each SDK result maps
+ * to completeTask → ready_for_review.
  */
 export class SdkAgentRunner implements AgentRunner {
   private input: PushStream<SDKUserMessage> | null = null;
   private activeQuery: Query | null = null;
+  private activeCwd: string;
   private pendingPermissions = new Map<string, PendingPermission>();
-  private currentTask: AssignedTask | null = null;
   private disposed = false;
 
   constructor(
     private readonly ctx: RunnerContext,
     private readonly options: SdkRunnerOptions,
-  ) {}
+  ) {
+    this.activeCwd = options.cwd;
+  }
 
   async assignTask(task: AssignedTask): Promise<void> {
-    await this.ensureProjectDir();
-    this.currentTask = task;
+    if (this.disposed) throw new Error("runner disposed");
+    this.endTask(); // defensive: clear any leftover session
+    this.activeCwd = task.worktreePath ?? this.options.cwd;
     this.ctx.setStatus("working");
     this.ctx.emit({ type: "task.update", taskId: task.taskId, status: "in_progress" });
 
@@ -62,7 +65,7 @@ export class SdkAgentRunner implements AgentRunner {
     this.activeQuery = query({
       prompt: this.input,
       options: {
-        cwd: this.options.cwd,
+        cwd: this.activeCwd,
         systemPrompt: {
           type: "preset",
           preset: "claude_code",
@@ -85,9 +88,6 @@ export class SdkAgentRunner implements AgentRunner {
     }
     if (this.ctx.getStatus() === "ready_for_review") {
       this.ctx.setStatus("revising");
-      if (this.currentTask) {
-        this.ctx.emit({ type: "task.update", taskId: this.currentTask.taskId, status: "revising" });
-      }
     }
     this.pushUserText(text);
   }
@@ -100,16 +100,20 @@ export class SdkAgentRunner implements AgentRunner {
     return true;
   }
 
-  dispose(): void {
-    this.disposed = true;
+  endTask(): void {
     for (const [id, pending] of this.pendingPermissions) {
       pending.resolve(false);
       this.pendingPermissions.delete(id);
     }
     this.input?.close();
     this.activeQuery?.close();
-    this.activeQuery = null;
     this.input = null;
+    this.activeQuery = null;
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.endTask();
   }
 
   // -------------------------------------------------------------------------
@@ -126,11 +130,12 @@ export class SdkAgentRunner implements AgentRunner {
     const agent = this.ctx.agentName;
     try {
       for await (const message of q as AsyncIterable<SDKMessage>) {
-        if (this.disposed) return;
+        if (this.disposed || this.activeQuery !== q) return;
         this.handleMessage(message);
       }
     } catch (err) {
-      if (this.disposed) return;
+      // endTask/dispose closes the query mid-iteration — that's not an error.
+      if (this.disposed || this.activeQuery !== q) return;
       this.ctx.emit({
         type: "agent.message",
         agent,
@@ -158,7 +163,7 @@ export class SdkAgentRunner implements AgentRunner {
             this.ctx.emit({
               type: "agent.activity",
               agent,
-              ...describeToolUse(block.name, block.input as Record<string, unknown>, this.options.cwd),
+              ...describeToolUse(block.name, block.input as Record<string, unknown>, this.activeCwd),
             });
           }
         }
@@ -166,21 +171,9 @@ export class SdkAgentRunner implements AgentRunner {
       }
       case "result": {
         if (message.subtype === "success") {
-          this.ctx.setStatus("ready_for_review");
-          if (this.currentTask) {
-            this.ctx.emit({
-              type: "review.ready",
-              agent,
-              taskId: this.currentTask.taskId,
-              summary: message.result ?? "(no summary)",
-              diffStat: "n/a — git wiring lands in step 2",
-            });
-            this.ctx.emit({
-              type: "task.update",
-              taskId: this.currentTask.taskId,
-              status: "ready_for_review",
-            });
-          }
+          void this.ctx
+            .completeTask(message.result ?? "(no summary)")
+            .catch((err: unknown) => console.error(`[${agent}] completeTask failed:`, err));
         } else {
           this.ctx.emit({
             type: "agent.message",
@@ -244,23 +237,9 @@ export class SdkAgentRunner implements AgentRunner {
   private isInsideWorktree(input: Record<string, unknown>): boolean {
     const candidate = input["file_path"] ?? input["path"] ?? input["notebook_path"];
     if (typeof candidate !== "string") return false;
-    const resolved = path.resolve(this.options.cwd, candidate);
-    const root = path.resolve(this.options.cwd);
+    const resolved = path.resolve(this.activeCwd, candidate);
+    const root = path.resolve(this.activeCwd);
     return resolved === root || resolved.startsWith(root + path.sep);
-  }
-
-  private async ensureProjectDir(): Promise<void> {
-    await mkdir(this.options.cwd, { recursive: true });
-    const readme = path.join(this.options.cwd, "README.md");
-    try {
-      await access(readme);
-    } catch {
-      await writeFile(
-        readme,
-        "# office-hq toy project\n\nScratch repo the office agents work against.\n",
-        "utf8",
-      );
-    }
   }
 }
 

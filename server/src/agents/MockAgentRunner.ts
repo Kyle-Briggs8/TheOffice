@@ -8,10 +8,12 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
  * where all game/UI development happens (protects the Claude Pro rate limits).
  *
  * Script per task: working → a few agent.activity events → agent.message →
- * ready_for_review (+ review.ready + task.update).
+ * completeTask (manager emits ready_for_review + review.ready). Feedback after
+ * a send-back triggers one revision pass so the review loop is testable too.
  */
 export class MockAgentRunner implements AgentRunner {
-  private disposed = false;
+  /** Bumped by endTask/dispose so an in-flight script stops emitting. */
+  private generation = 0;
 
   constructor(
     private readonly ctx: RunnerContext,
@@ -19,6 +21,7 @@ export class MockAgentRunner implements AgentRunner {
   ) {}
 
   async assignTask(task: AssignedTask): Promise<void> {
+    const gen = this.generation;
     const agent = this.ctx.agentName;
     const d = this.baseDelayMs;
 
@@ -35,12 +38,12 @@ export class MockAgentRunner implements AgentRunner {
 
     for (const activity of activities) {
       await sleep(d);
-      if (this.disposed) return;
+      if (gen !== this.generation) return;
       this.ctx.emit({ type: "agent.activity", agent, ...activity });
     }
 
     await sleep(d);
-    if (this.disposed) return;
+    if (gen !== this.generation) return;
     this.ctx.emit({
       type: "agent.message",
       agent,
@@ -48,24 +51,36 @@ export class MockAgentRunner implements AgentRunner {
     });
 
     await sleep(d);
-    if (this.disposed) return;
-    this.ctx.setStatus("ready_for_review");
-    this.ctx.emit({
-      type: "review.ready",
-      agent,
-      taskId: task.taskId,
-      summary: `Mock implementation of: ${task.prompt}`,
-      diffStat: "+18 -2 across 2 files (mock)",
-    });
-    this.ctx.emit({ type: "task.update", taskId: task.taskId, status: "ready_for_review" });
+    if (gen !== this.generation) return;
+    await this.ctx.completeTask(`Mock implementation of: ${task.prompt}`);
   }
 
   async sendChat(text: string): Promise<void> {
+    const gen = this.generation;
+    const agent = this.ctx.agentName;
+
     await sleep(this.baseDelayMs);
-    if (this.disposed) return;
+    if (gen !== this.generation) return;
+
+    if (this.ctx.getStatus() === "revising") {
+      // Send-back (or merge-conflict) feedback: do one scripted revision pass.
+      this.ctx.emit({
+        type: "agent.message",
+        agent,
+        text: `(mock) Fair point on "${text}". On it.`,
+      });
+      await sleep(this.baseDelayMs);
+      if (gen !== this.generation) return;
+      this.ctx.emit({ type: "agent.activity", agent, text: "Edited src/hello.ts", icon: "edit" });
+      await sleep(this.baseDelayMs);
+      if (gen !== this.generation) return;
+      await this.ctx.completeTask("Mock revision: addressed the feedback");
+      return;
+    }
+
     this.ctx.emit({
       type: "agent.message",
-      agent: this.ctx.agentName,
+      agent,
       text: `(mock) Heard you on "${text}". Noted — pretending to act on it convincingly.`,
     });
   }
@@ -75,7 +90,11 @@ export class MockAgentRunner implements AgentRunner {
     return false;
   }
 
+  endTask(): void {
+    this.generation++;
+  }
+
   dispose(): void {
-    this.disposed = true;
+    this.generation++;
   }
 }

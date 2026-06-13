@@ -4,9 +4,10 @@ A pixel-art office sim that is a real multi-agent coding orchestrator. Each NPC
 "employee" is a live Claude Code session (Claude Agent SDK). See `CLAUDE_1.md`
 for the full design and build order.
 
-**Build status: step 1 of 6** — server skeleton with one agent ("jim"), the
-AgentManager, the status state machine, and a mock event pipeline. No git
-worktrees, no WebSocket, no game client yet.
+**Build status: step 2 of 6** — server skeleton with one agent ("jim"), the
+AgentManager, the status state machine, the mock event pipeline, and GitService
+(branch + worktree lifecycle, merge with conflict auto-send-back). No WebSocket,
+no game client yet.
 
 ## Layout
 
@@ -14,9 +15,10 @@ worktrees, no WebSocket, no game client yet.
 shared/   protocol types (ServerEvent / ClientCommand) — one source of truth
 server/   Node 18+ / TypeScript backend
   src/agents/        AgentManager, AgentSession (state machine), runners
+  src/git/           GitService (branch + worktree lifecycle, raw git via execa)
   src/personalities/ per-agent system prompts (jim.md)
 client/   Phaser game — empty until step 4
-office-hq/ runtime data dir (gitignored), created on demand in real mode
+office-hq/ runtime data dir (gitignored): project repo + worktrees/<agent>/
 ```
 
 TypeScript strict mode, ESM, npm workspaces. Run with `tsx` (no build step).
@@ -33,17 +35,30 @@ npm install
 npm run demo
 ```
 
-Assigns jim a sample task and logs the scripted event flow to the console:
+Assigns jim a sample task and drives the full review loop off the event stream:
 
 ```
-idle → working → agent.activity ×5 → agent.message → ready_for_review (+ review.ready)
+idle → working → agent.activity ×5 → agent.message → ready_for_review
+     → send back (revising) → ready_for_review again → merge → idle
 ```
 
 Pass a custom task as arguments: `npm run demo -- "refactor the widget"`.
-`MOCK_DELAY_MS` controls pacing (default 600).
+`MOCK_DELAY_MS` controls pacing (default 600). Mock mode never touches git.
 
 All game/UI development happens in mock mode — this protects the Claude Pro
 rate limits.
+
+## Git lifecycle demo (real git, zero SDK calls)
+
+```sh
+npm run demo:git
+```
+
+Exercises GitService against the toy repo at `office-hq/project`: branch
+`office/jim/<slug>` from main + worktree at `office-hq/worktrees/jim`, commit,
+diffstat, clean merge — then a real merge conflict (detected, aborted, files
+reported). The toy repo is its own git repo; GitService refuses to run if
+`office-hq/project` would resolve to any outer repo.
 
 ## Run against the real Claude Agent SDK
 
@@ -56,13 +71,17 @@ npm run demo:real
 
 (equivalently `MOCK_AGENTS=0`, e.g. PowerShell: `$env:MOCK_AGENTS="0"; npm run demo`)
 
-The agent works inside the toy repo at `office-hq/project/` (created
-automatically). File edits inside it are auto-approved; anything else (Bash,
-paths outside the worktree) emits an `agent.permission_request` event and the
+Assigning a task creates branch `office/jim/<task-slug>` from main and a git
+worktree at `office-hq/worktrees/jim` — the SDK session's cwd. On completion
+the manager commits the branch, computes a real diffstat, and emits
+`review.ready`. Merging runs `--no-ff` into main; a conflict auto-sends the
+task back to the agent with the conflicted files (the player never resolves
+conflicts). File edits inside the worktree are auto-approved; anything else
+(Bash, paths outside the worktree) emits `agent.permission_request` and the
 agent goes `blocked` until `AgentManager.respondPermission()` is called —
 unanswered requests auto-deny after 2 minutes. With no UI yet, expect real-mode
-runs to deny anything beyond file edits. Real sessions are for integration
-testing only.
+runs to deny anything beyond file edits (including the `git rebase` a conflict
+resolution needs). Real sessions are for integration testing only.
 
 ## Status state machine
 
@@ -82,7 +101,6 @@ npm run typecheck
 
 ## Next (do not skip ahead)
 
-2. GitService: branch + worktree lifecycle
 3. WS gateway + plain HTML debug page
 4. Phaser client
 5. Three agents + concurrency cap UX

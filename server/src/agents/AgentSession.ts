@@ -23,6 +23,8 @@ export class InvalidTransitionError extends Error {
 export interface AssignedTask {
   taskId: string;
   prompt: string;
+  /** Set by the manager in real mode: the agent's git worktree (= SDK cwd). */
+  worktreePath?: string;
 }
 
 export class AgentSession {
@@ -30,7 +32,8 @@ export class AgentSession {
   readonly personality: string;
   status: AgentStatus = "idle";
   task: AssignedTask | null = null;
-  // branch / worktreePath join in step 2 (GitService)
+  branch: string | null = null;
+  worktreePath: string | null = null;
 
   constructor(name: string, personality: string) {
     this.name = name;

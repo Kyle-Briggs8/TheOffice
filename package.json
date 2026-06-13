@@ -13,7 +13,8 @@
   "scripts": {
     "demo": "npm run demo --workspace server",
     "demo:real": "npm run demo:real --workspace server",
-    "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p server"
+    "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p server",
+    "demo:git": "npm run demo:git --workspace server"
   },
   "devDependencies": {
     "@types/node": "^18.19.130",
