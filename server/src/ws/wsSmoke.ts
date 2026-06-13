@@ -30,6 +30,10 @@ ws.on("message", (data) => {
   if (event.type === "task.update" && myTaskId === null && event.status === "in_progress") {
     myTaskId = event.taskId; // first task to start after our assign is ours
   }
+  if (event.type === "agent.permission_request") {
+    console.log("smoke: >> permission.respond (approve)");
+    send({ type: "permission.respond", requestId: event.requestId, approve: true });
+  }
   if (event.type === "review.ready" && event.taskId === myTaskId) {
     reviewCount++;
     if (reviewCount === 1) {

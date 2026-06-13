@@ -13,6 +13,19 @@
           background: rgba(20,22,30,.9); border: 1px solid #2c2f3a; border-radius: 6px;
           padding: 6px 14px; font-size: 13px; z-index: 10; display: none; }
 
+  /* Always-visible permission tray — a blocked agent needs you wherever you are. */
+  #perms { position: absolute; top: 34px; left: 50%; transform: translateX(-50%);
+           width: 440px; max-width: 90vw; z-index: 30; display: none; }
+  #perms .req { background: rgba(48,24,24,.97); border: 1px solid #c25450;
+                border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
+                font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+  #perms .req .head { color: #ff8b8b; font-weight: bold; margin-bottom: 4px; }
+  #perms .req .detail { color: #c9a; font-size: 11px; word-break: break-all; margin-bottom: 8px; }
+  #perms .req button { border: 0; border-radius: 4px; padding: 5px 16px; margin-right: 8px;
+                       cursor: pointer; color: #fff; font: inherit; }
+  #perms .req button.ok { background: #2d8c4a; }
+  #perms .req button.no { background: #c25450; }
+
   .panel { position: absolute; background: rgba(20,22,30,.95); border: 1px solid #2c2f3a;
            border-radius: 8px; z-index: 20; display: none; }
   .panel h2 { font-size: 11px; margin: 0; padding: 8px 12px; color: #8b90a0;
@@ -42,6 +55,7 @@
   <div id="game"></div>
   <span id="conn" class="bad">● connecting…</span>
   <div id="hint"></div>
+  <div id="perms"></div>
 
   <div id="activity" class="panel">
     <h2 id="activityTitle">jim — activity</h2>

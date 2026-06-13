@@ -27,6 +27,7 @@ export class Panels {
     chatMode: document.getElementById("chatMode") as HTMLDivElement,
     chatInput: document.getElementById("chatInput") as HTMLInputElement,
     chatSend: document.getElementById("chatSend") as HTMLButtonElement,
+    perms: document.getElementById("perms") as HTMLDivElement,
   };
 
   constructor(
@@ -42,7 +43,13 @@ export class Panels {
     this.el.chatSend.onclick = () => this.submit();
     this.el.chatInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") this.submit();
+      if (e.key === "Escape") this.closeChat();
       e.stopPropagation(); // typing must not move the player
+    });
+    // Fallback so Esc closes the chat even when the input isn't focused
+    // (Phaser's own listener can miss it depending on focus).
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && this.isChatOpen()) this.closeChat();
     });
     this.el.chatInput.addEventListener("focus", () => (this.inputFocused = true));
     this.el.chatInput.addEventListener("blur", () => (this.inputFocused = false));
@@ -104,6 +111,8 @@ export class Panels {
   }
 
   private render(): void {
+    this.renderPermissions();
+
     if (this.activityAgent) {
       const agent = this.state.agents.get(this.activityAgent);
       this.el.activityTitle.textContent = `${this.activityAgent} — activity`;
@@ -138,27 +147,51 @@ export class Panels {
           : `· ${entry.text}`;
         this.el.chatLog.appendChild(row);
       }
-      for (const perm of agent?.permissions.values() ?? []) {
-        const row = document.createElement("div");
-        row.className = "perm";
-        row.textContent = `❗ wants to use ${perm.tool}: ${perm.detail} `;
-        const approve = document.createElement("button");
-        approve.textContent = "Approve";
-        approve.onclick = () => this.respondPermission(perm.requestId, true);
-        const deny = document.createElement("button");
-        deny.className = "warn";
-        deny.textContent = "Deny";
-        deny.onclick = () => this.respondPermission(perm.requestId, false);
-        row.append(approve, deny);
-        this.el.chatLog.appendChild(row);
-      }
       this.el.chatLog.scrollTop = this.el.chatLog.scrollHeight;
     }
   }
 
-  private respondPermission(requestId: string, approve: boolean): void {
-    if (!this.chatAgent) return;
+  /**
+   * Always-visible across the whole screen: a blocked agent must be answerable
+   * no matter where the player is standing (the ❗ bubble is the ambient cue;
+   * this tray is where you act on it). Lists pending requests for every agent.
+   */
+  private renderPermissions(): void {
+    this.el.perms.innerHTML = "";
+    let any = false;
+    for (const agent of this.state.agents.values()) {
+      for (const perm of agent.permissions.values()) {
+        any = true;
+        const req = document.createElement("div");
+        req.className = "req";
+
+        const head = document.createElement("div");
+        head.className = "head";
+        head.textContent = `❗ ${agent.name} wants to use ${perm.tool}`;
+
+        const detail = document.createElement("div");
+        detail.className = "detail";
+        detail.textContent = perm.detail;
+
+        const approve = document.createElement("button");
+        approve.className = "ok";
+        approve.textContent = "Approve";
+        approve.onclick = () => this.respondPermission(agent.name, perm.requestId, true);
+
+        const deny = document.createElement("button");
+        deny.className = "no";
+        deny.textContent = "Deny";
+        deny.onclick = () => this.respondPermission(agent.name, perm.requestId, false);
+
+        req.append(head, detail, approve, deny);
+        this.el.perms.appendChild(req);
+      }
+    }
+    this.el.perms.style.display = any ? "block" : "none";
+  }
+
+  private respondPermission(agentName: string, requestId: string, approve: boolean): void {
     this.conn.send({ type: "permission.respond", requestId, approve });
-    this.state.resolvePermission(this.chatAgent, requestId, approve);
+    this.state.resolvePermission(agentName, requestId, approve);
   }
 }

@@ -30,6 +30,10 @@ async function main(): Promise<void> {
   let reviewCount = 0;
   const done = new Promise<void>((resolve) => {
     manager.on("event", (event: ServerEvent) => {
+      if (event.type === "agent.permission_request") {
+        console.log("\n>> auto-approving (headless demo)…\n");
+        manager.respondPermission(event.requestId, true);
+      }
       if (event.type === "review.ready" && event.taskId === taskId) {
         reviewCount++;
         if (reviewCount === 1) {
