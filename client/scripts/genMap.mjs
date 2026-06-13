@@ -1,5 +1,9 @@
 // Generates the Tiled JSON office map (client/assets/maps/office.json).
 // Tile ids into the generated "office-tiles" tileset: 1 floor, 2 wall, 3 carpet.
+//
+// Floor plan: open office with an enclosed manager's office in the top-right
+// corner (carpet + one doorway). Everything else is open floor; desks and decor
+// are placed as sprites in OfficeScene, not baked into the map.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -10,20 +14,21 @@ const FLOOR = 1;
 const WALL = 2;
 const CARPET = 3;
 
-// Carpet zone = jim's corner office area (tile coords, inclusive).
-const carpet = { x0: 19, y0: 2, x1: 28, y1: 9 };
+// Manager's office (tile coords): room x 20..29, y 0..7, with a door at (20,4).
+const room = { x0: 20, y0: 0, x1: 29, y1: 7, doorY: 4 };
 
 const floor = [];
 const walls = [];
 for (let y = 0; y < H; y++) {
   for (let x = 0; x < W; x++) {
-    const inCarpet = x >= carpet.x0 && x <= carpet.x1 && y >= carpet.y0 && y <= carpet.y1;
-    floor.push(inCarpet ? CARPET : FLOOR);
-    const isWall =
-      x === 0 || y === 0 || x === W - 1 || y === H - 1 ||
-      (x === 18 && y >= 1 && y <= 6) || // partition around jim's area
-      (y === 10 && x >= 22 && x <= 28);
-    walls.push(isWall ? WALL : 0);
+    const inRoom = x >= room.x0 + 1 && x <= room.x1 - 1 && y >= room.y0 + 1 && y <= room.y1 - 1;
+    floor.push(inRoom ? CARPET : FLOOR);
+
+    const border = x === 0 || y === 0 || x === W - 1 || y === H - 1;
+    // Manager office: left wall (x=20) with a doorway, and bottom wall (y=7).
+    const roomLeftWall = x === room.x0 && y >= room.y0 && y <= room.y1 && y !== room.doorY;
+    const roomBottomWall = y === room.y1 && x >= room.x0 && x <= room.x1;
+    walls.push(border || roomLeftWall || roomBottomWall ? WALL : 0);
   }
 }
 
@@ -55,8 +60,8 @@ const map = {
     columns: 3,
     margin: 0,
     spacing: 0,
-    // The actual pixels are generated at runtime (OfficeScene.makeTilesetTexture);
-    // this image reference is never fetched.
+    // Pixels are generated at runtime (OfficeScene.makeTilesetTexture); this
+    // image reference is never fetched.
     image: "office-tiles.png",
     imagewidth: 48,
     imageheight: 16,
@@ -66,4 +71,4 @@ const map = {
 const out = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "maps");
 mkdirSync(out, { recursive: true });
 writeFileSync(path.join(out, "office.json"), JSON.stringify(map));
-console.log(`wrote ${path.join(out, "office.json")} (${W}x${H} tiles)`);
+console.log(`wrote ${path.join(out, "office.json")} (${W}x${H} tiles, manager office top-right)`);

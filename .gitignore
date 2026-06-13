@@ -3,3 +3,6 @@ dist/
 office-hq/
 *.log
 .env
+
+# Dev screenshots from client/scripts/shoot.mjs (the tool stays; output doesn't)
+client/*.png

@@ -17,15 +17,15 @@ const BUBBLES: Record<AgentStatus, string> = {
 const NEAR_RADIUS = 84;
 const CHAT_RADIUS = 52;
 
-/** The manager office: walk within this radius to open the review panel. */
-const MANAGER = { x: 240, y: 48 };
-const MANAGER_RADIUS = 70;
+/** The manager office (inside the top-right room): walk near to open reviews. */
+const MANAGER = { x: 360, y: 72 };
+const MANAGER_RADIUS = 78;
 
-/** Desk layout: one per agent, with the seated-worker sprite to use. */
+/** Desk layout: one per agent (a tidy row in the open floor), seated worker. */
 const DESKS: ReadonlyArray<{ name: string; x: number; y: number; worker: string }> = [
-  { name: "jim", x: 384, y: 96, worker: "worker" },
-  { name: "dwight", x: 96, y: 112, worker: "worker2" },
-  { name: "pam", x: 96, y: 240, worker: "worker4" },
+  { name: "jim", x: 110, y: 176, worker: "worker" },
+  { name: "dwight", x: 245, y: 176, worker: "worker2" },
+  { name: "pam", x: 380, y: 176, worker: "worker4" },
 ];
 
 interface Deps {
@@ -80,47 +80,44 @@ export class OfficeScene extends Phaser.Scene {
     if (!walls) throw new Error("walls layer missing");
     walls.setCollision(2);
 
-    // Decor (placeholder-tier positions).
-    this.add.image(52, 40, "water-cooler");
-    this.add.image(200, 26, "coffee-maker").setOrigin(0.5, 0.3);
-    this.add.image(444, 200, "printer");
-    this.add.image(250, 300, "plant");
-    this.add.image(330, 250, "trash");
+    // Break nook along the top-left wall, plus tidy decor against the edges.
+    this.decor(40, 44, "water-cooler");
+    this.decor(76, 40, "coffee-maker");
+    this.decor(112, 40, "cabinet");
+    this.decor(440, 250, "printer");
+    this.decor(60, 290, "trash");
+    this.decor(190, 290, "plant");
+    this.decor(300, 290, "plant");
 
-    // One desk + seated worker + status bubble per agent.
     const deskColliders = this.physics.add.staticGroup();
+
+    // One desk + seated worker (behind the desk) + name + status bubble per agent.
     for (const spec of DESKS) {
-      const desk = this.physics.add.staticImage(spec.x, spec.y, "desk-pc");
-      desk.setSize(44, 24).setOffset(10, 28);
-      deskColliders.add(desk);
-      this.add.image(spec.x, spec.y - 14, spec.worker);
+      this.seat(spec.x, spec.y, spec.worker, deskColliders);
       this.add
-        .text(spec.x, spec.y - 30, spec.name, { fontSize: "9px", color: "#cdd0db" })
+        .text(spec.x, spec.y - 34, spec.name, { fontSize: "9px", color: "#cdd0db" })
         .setOrigin(0.5)
-        .setDepth(10_000);
+        .setDepth(20_000);
       const bubble = this.add
-        .text(spec.x, spec.y - 46, BUBBLES.idle, { fontSize: "16px" })
+        .text(spec.x, spec.y - 48, BUBBLES.idle, { fontSize: "16px" })
         .setOrigin(0.5)
-        .setDepth(10_000);
+        .setDepth(20_000);
       this.desks.push({ name: spec.name, x: spec.x, y: spec.y, bubble });
     }
 
-    // Manager office: the boss + desk. Walk up to review ready branches.
-    const managerDesk = this.physics.add.staticImage(MANAGER.x, MANAGER.y + 10, "desk-pc");
-    managerDesk.setSize(44, 24).setOffset(10, 28);
-    deskColliders.add(managerDesk);
-    this.add.image(MANAGER.x, MANAGER.y - 4, "boss");
+    // Manager office (inside the top-right room): the boss at his desk.
+    this.seat(MANAGER.x, MANAGER.y, "boss", deskColliders);
     this.add
-      .text(MANAGER.x, MANAGER.y - 22, "manager", { fontSize: "9px", color: "#d4a5ff" })
+      .text(MANAGER.x, MANAGER.y - 34, "manager", { fontSize: "9px", color: "#d4a5ff" })
       .setOrigin(0.5)
-      .setDepth(10_000);
+      .setDepth(20_000);
     this.managerBubble = this.add
-      .text(MANAGER.x, MANAGER.y - 38, "", { fontSize: "13px", color: "#d4a5ff" })
+      .text(MANAGER.x, MANAGER.y - 48, "", { fontSize: "13px", color: "#d4a5ff" })
       .setOrigin(0.5)
-      .setDepth(10_000);
+      .setDepth(20_000);
 
     // Player (Julia walk sheets: 4 frames per direction, 64x64).
-    this.player = this.physics.add.sprite(220, 180, "julia-down", 0);
+    this.player = this.physics.add.sprite(245, 270, "julia-down", 0);
     this.player.body?.setSize(12, 8);
     this.player.body?.setOffset(26, 46);
     this.player.setCollideWorldBounds(true);
@@ -140,7 +137,9 @@ export class OfficeScene extends Phaser.Scene {
 
     this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
     this.cameras.main.startFollow(this.player, true);
-    this.cameras.main.setZoom(2);
+    // Default 2x; override with ?zoom=N (handy for seeing the whole floor plan).
+    const zoom = Number(new URLSearchParams(location.search).get("zoom"));
+    this.cameras.main.setZoom(Number.isFinite(zoom) && zoom > 0 ? zoom : 2);
 
     const keyboard = this.input.keyboard;
     if (!keyboard) throw new Error("keyboard plugin missing");
@@ -230,6 +229,28 @@ export class OfficeScene extends Phaser.Scene {
       this.chatTarget = null;
       panels.setHint("");
     }
+  }
+
+  /** Static decor, depth-sorted by its base so the player walks in front/behind. */
+  private decor(x: number, y: number, key: string): void {
+    this.add.image(x, y, key).setDepth(y);
+  }
+
+  /**
+   * A worker seated at a desk: the worker is drawn slightly up and behind, the
+   * desk in front (occluding their lower half) so it reads as "sitting at it".
+   * Adds a collider on the desk footprint only.
+   */
+  private seat(
+    x: number,
+    y: number,
+    worker: string,
+    colliders: Phaser.Physics.Arcade.StaticGroup,
+  ): void {
+    this.add.image(x, y - 16, worker).setDepth(y - 1);
+    const desk = this.physics.add.staticImage(x, y, "desk-pc").setDepth(y);
+    desk.body.setSize(52, 26).setOffset(6, 30);
+    colliders.add(desk);
   }
 
   /** 3-tile strip (floor, wall, carpet) generated at runtime — no binary tileset. */
