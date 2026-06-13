@@ -12,6 +12,7 @@ const ICONS: Record<string, string> = { edit: "✏️", run: "▶️", read: "�
 export class Panels {
   private chatAgent: string | null = null;
   private activityAgent: string | null = null;
+  private reviewOpen = false;
   /** Set while the chat input has focus — the scene stops moving the player. */
   inputFocused = false;
 
@@ -28,6 +29,8 @@ export class Panels {
     chatInput: document.getElementById("chatInput") as HTMLInputElement,
     chatSend: document.getElementById("chatSend") as HTMLButtonElement,
     perms: document.getElementById("perms") as HTMLDivElement,
+    review: document.getElementById("review") as HTMLDivElement,
+    reviewBody: document.getElementById("reviewBody") as HTMLDivElement,
   };
 
   constructor(
@@ -92,6 +95,21 @@ export class Panels {
     this.el.chatInput.blur();
   }
 
+  // -- manager office: review queue -------------------------------------------
+
+  showReview(): void {
+    if (this.reviewOpen) return;
+    this.reviewOpen = true;
+    this.el.review.style.display = "block";
+    this.render();
+  }
+
+  hideReview(): void {
+    if (!this.reviewOpen) return;
+    this.reviewOpen = false;
+    this.el.review.style.display = "none";
+  }
+
   // ---------------------------------------------------------------------------
 
   private submit(): void {
@@ -112,6 +130,7 @@ export class Panels {
 
   private render(): void {
     this.renderPermissions();
+    if (this.reviewOpen) this.renderReview();
 
     if (this.activityAgent) {
       const agent = this.state.agents.get(this.activityAgent);
@@ -150,6 +169,62 @@ export class Panels {
         this.el.chatLog.appendChild(row);
       }
       this.el.chatLog.scrollTop = this.el.chatLog.scrollHeight;
+    }
+  }
+
+  /** Manager-office panel: every branch at ready_for_review with merge/back/kill. */
+  private renderReview(): void {
+    this.el.reviewBody.innerHTML = "";
+    const reviews = [...this.state.reviews.values()];
+    if (reviews.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "No branches waiting. Go assign someone a task.";
+      this.el.reviewBody.appendChild(empty);
+      return;
+    }
+    for (const review of reviews) {
+      const item = document.createElement("div");
+      item.className = "item";
+
+      const who = document.createElement("div");
+      who.className = "who";
+      who.textContent = `${review.agent} · ${review.taskId}`;
+
+      const summary = document.createElement("div");
+      summary.className = "summary";
+      summary.textContent = review.summary;
+
+      const diff = document.createElement("div");
+      diff.className = "diff";
+      diff.textContent = review.diffStat;
+
+      const merge = document.createElement("button");
+      merge.className = "merge";
+      merge.textContent = "Merge";
+      merge.onclick = () => this.conn.send({ type: "review.merge", taskId: review.taskId });
+
+      const back = document.createElement("button");
+      back.className = "back";
+      back.textContent = "Send back";
+      back.onclick = () => {
+        const feedback = window.prompt(`Feedback for ${review.agent}:`) ?? undefined;
+        if (feedback !== undefined) {
+          this.conn.send({ type: "review.send_back", taskId: review.taskId, feedback });
+        }
+      };
+
+      const kill = document.createElement("button");
+      kill.className = "kill";
+      kill.textContent = "Kill";
+      kill.onclick = () => {
+        if (window.confirm(`Kill ${review.taskId}? This removes ${review.agent}'s branch and worktree.`)) {
+          this.conn.send({ type: "review.kill", taskId: review.taskId });
+        }
+      };
+
+      item.append(who, summary, diff, merge, back, kill);
+      this.el.reviewBody.appendChild(item);
     }
   }
 

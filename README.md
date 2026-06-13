@@ -4,12 +4,13 @@ A pixel-art office sim that is a real multi-agent coding orchestrator. Each NPC
 "employee" is a live Claude Code session (Claude Agent SDK). See `CLAUDE_1.md`
 for the full design and build order.
 
-**Build status: step 5 of 6** — three agents (jim, dwight, pam) with personality
-prompts and a concurrency cap, the AgentManager, the status state machine, the
-mock event pipeline, GitService (branch + worktree lifecycle, merge with
-conflict auto-send-back), the WebSocket gateway with an HTML debug page, and the
-Phaser client (tilemap office, three desks, player movement, proximity tiers,
-chat panel over the same WS).
+**Build status: all 6 steps complete (v1).** Three agents (jim, dwight, pam)
+with personality prompts and a concurrency cap, the AgentManager, the status
+state machine, the mock event pipeline, GitService (branch + worktree lifecycle,
+merge with conflict auto-send-back), the WebSocket gateway with an HTML debug
+page, and the Phaser client — tilemap office, three desks, player movement,
+proximity tiers, chat panel, and an in-game manager-office review panel — all
+over the same WS.
 
 ## Layout
 
@@ -76,9 +77,16 @@ the third queues as 💤 until a slot frees. Permission requests appear in an
 **always-visible tray** at the top of the screen (Approve/Deny) no matter where
 you're standing.
 
-Merge / send-back / kill still live on the debug page (http://localhost:3001/)
-until the manager-office review panel lands in step 6. The client connects to
-`ws://<host>:3001` by default; override with `?ws=ws://host:port`.
+**Manager office** (the boss desk, top-center): walk up to it to open the review
+panel. It lists every branch sitting at 📋 ready for review with **Merge** (into
+main), **Send back** (prompts for feedback, injected into the agent's live
+session — they revise on the same branch), and **Kill** (removes the worktree +
+branch). The boss shows a 📋 badge with the pending-review count from afar. In
+real mode this is the merge authority over `office-hq/project`.
+
+The debug page (http://localhost:3001/) still works as an alternate control
+surface. The client connects to `ws://<host>:3001` by default; override with
+`?ws=ws://host:port`.
 
 ## Run the mock demo (default — zero SDK calls)
 
@@ -150,6 +158,9 @@ Enforced in `server/src/agents/AgentSession.ts` — illegal transitions throw.
 npm run typecheck
 ```
 
-## Next (do not skip ahead)
+## Out of scope for v1 (per CLAUDE_1.md — not built)
 
-6. Manager-office review panel (list ready branches, diff summary, merge/send-back/kill in-game)
+- Team meeting / multi-agent discussion
+- API-key / bring-your-own-account support
+- Electron packaging
+- Shared single checkout (worktrees only, always)

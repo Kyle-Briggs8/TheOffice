@@ -17,6 +17,10 @@ const BUBBLES: Record<AgentStatus, string> = {
 const NEAR_RADIUS = 84;
 const CHAT_RADIUS = 52;
 
+/** The manager office: walk within this radius to open the review panel. */
+const MANAGER = { x: 240, y: 48 };
+const MANAGER_RADIUS = 70;
+
 /** Desk layout: one per agent, with the seated-worker sprite to use. */
 const DESKS: ReadonlyArray<{ name: string; x: number; y: number; worker: string }> = [
   { name: "jim", x: 384, y: 96, worker: "worker" },
@@ -44,6 +48,7 @@ export class OfficeScene extends Phaser.Scene {
   private desks: DeskView[] = [];
   /** Agent whose desk the player is currently within chat range of (or null). */
   private chatTarget: string | null = null;
+  private managerBubble!: Phaser.GameObjects.Text;
 
   constructor(private readonly deps: Deps) {
     super("office");
@@ -57,7 +62,7 @@ export class OfficeScene extends Phaser.Scene {
     this.load.spritesheet("julia-right", "sprites/julia-right.png", sheet);
     this.load.spritesheet("julia-up", "sprites/julia-up.png", sheet);
     for (const key of [
-      "worker", "worker2", "worker4", "desk-pc", "plant",
+      "worker", "worker2", "worker4", "boss", "desk-pc", "plant",
       "water-cooler", "coffee-maker", "printer", "cabinet", "trash",
     ]) {
       this.load.image(key, `sprites/${key}.png`);
@@ -100,6 +105,20 @@ export class OfficeScene extends Phaser.Scene {
       this.desks.push({ name: spec.name, x: spec.x, y: spec.y, bubble });
     }
 
+    // Manager office: the boss + desk. Walk up to review ready branches.
+    const managerDesk = this.physics.add.staticImage(MANAGER.x, MANAGER.y + 10, "desk-pc");
+    managerDesk.setSize(44, 24).setOffset(10, 28);
+    deskColliders.add(managerDesk);
+    this.add.image(MANAGER.x, MANAGER.y - 4, "boss");
+    this.add
+      .text(MANAGER.x, MANAGER.y - 22, "manager", { fontSize: "9px", color: "#d4a5ff" })
+      .setOrigin(0.5)
+      .setDepth(10_000);
+    this.managerBubble = this.add
+      .text(MANAGER.x, MANAGER.y - 38, "", { fontSize: "13px", color: "#d4a5ff" })
+      .setOrigin(0.5)
+      .setDepth(10_000);
+
     // Player (Julia walk sheets: 4 frames per direction, 64x64).
     this.player = this.physics.add.sprite(220, 180, "julia-down", 0);
     this.player.body?.setSize(12, 8);
@@ -129,12 +148,15 @@ export class OfficeScene extends Phaser.Scene {
     this.keys = keyboard.addKeys("W,A,S,D,E") as OfficeScene["keys"];
     keyboard.on("keydown-ESC", () => this.deps.panels.closeChat());
 
-    // Status bubbles render straight off the shared event-driven store.
+    // Status bubbles + the manager's review-count badge render straight off the
+    // shared event-driven store.
     const updateBubbles = () => {
       for (const desk of this.desks) {
         const agent = this.deps.state.agents.get(desk.name);
         if (agent) desk.bubble.setText(BUBBLES[agent.status]);
       }
+      const pending = this.deps.state.reviews.size;
+      this.managerBubble.setText(pending > 0 ? `📋 ${pending}` : "");
     };
     this.deps.state.onChange(updateBubbles);
     updateBubbles();
@@ -164,6 +186,16 @@ export class OfficeScene extends Phaser.Scene {
     else this.player.anims.stop();
 
     this.player.setDepth(this.player.y);
+
+    // -- manager office: open the review panel on proximity --------------------
+    const managerDist = Phaser.Math.Distance.Between(
+      this.player.x, this.player.y, MANAGER.x, MANAGER.y,
+    );
+    if (managerDist <= MANAGER_RADIUS) {
+      panels.showReview();
+    } else {
+      panels.hideReview();
+    }
 
     // -- proximity tiers (against the nearest desk) ---------------------------
     let nearest: DeskView | null = null;

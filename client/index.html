@@ -49,6 +49,20 @@
                border-radius: 4px; padding: 6px 8px; font: inherit; }
   #chatSend { background: #2d6cdf; color: #fff; border: 0; border-radius: 4px; padding: 6px 14px; cursor: pointer; }
   #chatMode { padding: 0 12px 8px; font-size: 11px; color: #8b90a0; }
+
+  #review { left: 16px; top: 16px; width: 320px; max-height: 70vh; }
+  #reviewBody { padding: 8px 12px; font-size: 12px; overflow-y: auto; max-height: 60vh; }
+  #reviewBody .empty { color: #8b90a0; font-style: italic; }
+  #reviewBody .item { border-top: 1px solid #2c2f3a; padding: 8px 0; }
+  #reviewBody .item:first-child { border-top: 0; }
+  #reviewBody .who { color: #d4a5ff; font-weight: bold; }
+  #reviewBody .summary { color: #d7d9e0; margin: 2px 0; line-height: 1.4; }
+  #reviewBody .diff { color: #8b90a0; font-size: 11px; margin-bottom: 6px; }
+  #reviewBody button { border: 0; border-radius: 4px; padding: 4px 12px; margin-right: 6px;
+                       cursor: pointer; color: #fff; font: inherit; font-size: 11px; }
+  #reviewBody button.merge { background: #2d8c4a; }
+  #reviewBody button.back { background: #3a3f4f; }
+  #reviewBody button.kill { background: #c25450; }
 </style>
 </head>
 <body>
@@ -70,6 +84,11 @@
       <input id="chatInput" type="text" autocomplete="off" />
       <button id="chatSend">Send</button>
     </div>
+  </div>
+
+  <div id="review" class="panel">
+    <h2>Manager office — ready for review</h2>
+    <div id="reviewBody"></div>
   </div>
 
   <script type="module" src="/src/main.ts"></script>

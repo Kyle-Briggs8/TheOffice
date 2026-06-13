@@ -19,6 +19,13 @@ export interface AgentView {
   permissions: Map<string, PendingPermission>;
 }
 
+export interface ReviewItem {
+  taskId: string;
+  agent: string;
+  summary: string;
+  diffStat: string;
+}
+
 const MAX_ACTIVITIES = 20;
 const MAX_CHAT = 60;
 
@@ -28,6 +35,8 @@ const MAX_CHAT = 60;
  */
 export class OfficeState {
   readonly agents = new Map<string, AgentView>();
+  /** Branches sitting at ready_for_review, keyed by taskId — the review queue. */
+  readonly reviews = new Map<string, ReviewItem>();
   private listeners = new Set<() => void>();
 
   apply(event: ServerEvent): void {
@@ -54,13 +63,21 @@ export class OfficeState {
         break;
       }
       case "review.ready":
+        this.reviews.set(event.taskId, {
+          taskId: event.taskId,
+          agent: event.agent,
+          summary: event.summary,
+          diffStat: event.diffStat,
+        });
         this.pushChat(event.agent, {
           who: "system",
           text: `ready for review — ${event.summary} [${event.diffStat}]`,
         });
         break;
       case "task.update":
-        // No agent on this envelope; per-agent task UI keys off agent.status.
+        // Leaving ready_for_review (merged/killed/sent back/re-working) drops it
+        // from the review queue. No agent on this envelope; key off taskId.
+        if (event.status !== "ready_for_review") this.reviews.delete(event.taskId);
         break;
     }
     this.notify();
