@@ -1,0 +1,23 @@
+{
+  "name": "the-office",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "demo": "npm run demo --workspace server",
+    "demo:real": "npm run demo:real --workspace server",
+    "typecheck": "tsc --noEmit -p shared && tsc --noEmit -p server"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.130",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
