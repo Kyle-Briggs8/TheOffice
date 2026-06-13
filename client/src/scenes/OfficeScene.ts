@@ -18,14 +18,14 @@ const NEAR_RADIUS = 84;
 const CHAT_RADIUS = 52;
 
 /** The manager office (inside the top-right room): walk near to open reviews. */
-const MANAGER = { x: 360, y: 72 };
-const MANAGER_RADIUS = 78;
+const MANAGER = { x: 392, y: 64 };
+const MANAGER_RADIUS = 84;
 
-/** Desk layout: one per agent (a tidy row in the open floor), seated worker. */
+/** Desk layout: one per agent, each centered on its cubicle rug. */
 const DESKS: ReadonlyArray<{ name: string; x: number; y: number; worker: string }> = [
-  { name: "jim", x: 110, y: 176, worker: "worker" },
-  { name: "dwight", x: 245, y: 176, worker: "worker2" },
-  { name: "pam", x: 380, y: 176, worker: "worker4" },
+  { name: "jim", x: 72, y: 184, worker: "worker" },
+  { name: "dwight", x: 232, y: 184, worker: "worker2" },
+  { name: "pam", x: 392, y: 184, worker: "worker4" },
 ];
 
 interface Deps {
@@ -64,6 +64,8 @@ export class OfficeScene extends Phaser.Scene {
     for (const key of [
       "worker", "worker2", "worker4", "boss", "desk-pc", "plant",
       "water-cooler", "coffee-maker", "printer", "cabinet", "trash",
+      "sink", "writing-table", "meeting-table", "chair",
+      "partition-corner", "partition-v",
     ]) {
       this.load.image(key, `sprites/${key}.png`);
     }
@@ -80,19 +82,21 @@ export class OfficeScene extends Phaser.Scene {
     if (!walls) throw new Error("walls layer missing");
     walls.setCollision(2);
 
-    // Break nook along the top-left wall, plus tidy decor against the edges.
-    this.decor(40, 44, "water-cooler");
-    this.decor(76, 40, "coffee-maker");
-    this.decor(112, 40, "cabinet");
-    this.decor(440, 250, "printer");
-    this.decor(60, 290, "trash");
-    this.decor(190, 290, "plant");
-    this.decor(300, 290, "plant");
-
     const deskColliders = this.physics.add.staticGroup();
 
-    // One desk + seated worker (behind the desk) + name + status bubble per agent.
+    // Break room (top-left): counter + appliances along the walls.
+    this.decor(40, 30, "sink");
+    this.decor(104, 30, "coffee-maker");
+    this.decor(24, 78, "water-cooler");
+    this.decor(128, 76, "cabinet");
+
+    // Manager office (top-right): a bookshelf and a plant beside the boss.
+    this.decor(348, 36, "writing-table");
+    this.decor(452, 34, "plant");
+
+    // Three cubicles: a partition backdrop behind each desk, then the seat.
     for (const spec of DESKS) {
+      this.add.image(spec.x, spec.y - 30, "partition-corner").setDepth(spec.y - 2);
       this.seat(spec.x, spec.y, spec.worker, deskColliders);
       this.add
         .text(spec.x, spec.y - 34, spec.name, { fontSize: "9px", color: "#cdd0db" })
@@ -104,8 +108,11 @@ export class OfficeScene extends Phaser.Scene {
         .setDepth(20_000);
       this.desks.push({ name: spec.name, x: spec.x, y: spec.y, bubble });
     }
+    // Vertical dividers between the cubicles.
+    this.decor(152, 184, "partition-v");
+    this.decor(312, 184, "partition-v");
 
-    // Manager office (inside the top-right room): the boss at his desk.
+    // Manager (inside the top-right room): the boss at his desk.
     this.seat(MANAGER.x, MANAGER.y, "boss", deskColliders);
     this.add
       .text(MANAGER.x, MANAGER.y - 34, "manager", { fontSize: "9px", color: "#d4a5ff" })
@@ -116,8 +123,20 @@ export class OfficeScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(20_000);
 
+    // Meeting area filling the lower-middle: a table ringed by chairs.
+    this.decor(240, 270, "chair");
+    this.decor(240, 250, "meeting-table");
+    this.decor(208, 268, "chair");
+    this.decor(272, 268, "chair");
+
+    // Plants in the far corners + a printer and bin against the walls.
+    this.decor(24, 300, "plant");
+    this.decor(456, 300, "plant");
+    this.decor(452, 232, "printer");
+    this.decor(40, 232, "trash");
+
     // Player (Julia walk sheets: 4 frames per direction, 64x64).
-    this.player = this.physics.add.sprite(245, 270, "julia-down", 0);
+    this.player = this.physics.add.sprite(300, 130, "julia-down", 0);
     this.player.body?.setSize(12, 8);
     this.player.body?.setOffset(26, 46);
     this.player.setCollideWorldBounds(true);
@@ -253,18 +272,25 @@ export class OfficeScene extends Phaser.Scene {
     colliders.add(desk);
   }
 
-  /** 3-tile strip (floor, wall, carpet) generated at runtime — no binary tileset. */
+  /** 4-tile strip (floor, wall, carpet, rug) generated at runtime — no binary tileset. */
   private makeTilesetTexture(): void {
     const g = this.add.graphics();
-    g.fillStyle(0x23252e).fillRect(0, 0, 16, 16);
-    g.fillStyle(0x282a34).fillRect(0, 0, 16, 1).fillRect(0, 0, 1, 16);
+    // tile 1: floor — subtle checker + grid so the open space isn't a flat void.
+    g.fillStyle(0x262833).fillRect(0, 0, 16, 16);
+    g.fillStyle(0x2b2d39).fillRect(0, 0, 8, 8).fillRect(8, 8, 8, 8);
+    g.fillStyle(0x1f2029).fillRect(0, 15, 16, 1).fillRect(15, 0, 1, 16);
+    // tile 2: wall
     g.fillStyle(0x434965).fillRect(16, 0, 16, 16);
     g.fillStyle(0x333952).fillRect(16, 12, 16, 4);
     g.fillStyle(0x4d547a).fillRect(16, 0, 16, 2);
+    // tile 3: carpet (manager — cool blue)
     g.fillStyle(0x2a3550).fillRect(32, 0, 16, 16);
     g.fillStyle(0x32405f);
     for (let y = 2; y < 16; y += 4) for (let x = 2 + (y % 8) / 2; x < 16; x += 4) g.fillRect(32 + x, y, 1, 1);
-    g.generateTexture("office-tiles-tex", 48, 16);
+    // tile 4: rug (cubicle — warm) with a border so pods read as defined areas.
+    g.fillStyle(0x3a3330).fillRect(48, 0, 16, 16);
+    g.fillStyle(0x4a4038).fillRect(48, 0, 16, 1).fillRect(48, 15, 16, 1).fillRect(48, 0, 1, 16).fillRect(63, 0, 1, 16);
+    g.generateTexture("office-tiles-tex", 64, 16);
     g.destroy();
   }
 }
